@@ -3,6 +3,7 @@ using PKHeX.Core;
 using SysBot.Base;
 using System;
 using System.Linq;
+using System.Threading.Tasks;
 
 namespace SysBot.Pokemon.Shopify;
 
@@ -10,17 +11,21 @@ public class ShopifyTradeNotifier<T> : IPokeTradeNotifier<T> where T : PKM, new(
 {
     private T Data { get; }
     private int Code { get; }
-    private string OrderID { get; }
+    private ulong OrderID { get; }
     private IWebSocketConnection Client { get; }
+    public bool IsFinished { get; set; } = false;
+    private ShopifyBot<T> Bot { get; } // Reference to ShopifyBot
     private ShopifySettings Settings { get; }
 
-    public ShopifyTradeNotifier(T data, int code, string orderID, IWebSocketConnection client, ShopifySettings settings)
+    public ShopifyTradeNotifier(T data, int code, ulong orderID, IWebSocketConnection client, ShopifySettings settings, ShopifyBot<T> bot)
     {
         Data = data;
         Code = code;
         OrderID = orderID;
         Client = client;
         Settings = settings;
+        Bot = bot;
+
 
         LogUtil.LogText($"Created trade details for orderID: {OrderID} - {Code}");
     }
@@ -48,6 +53,9 @@ public class ShopifyTradeNotifier<T> : IPokeTradeNotifier<T> where T : PKM, new(
         var message = tradedToUser != 0 ?
             string.Format(Settings.FR_TradeFinished, (Species)tradedToUser) :
             Settings.FR_TradeFinishedGeneric;
+
+        IsFinished = true;
+
         LogUtil.LogText(message);
         SendMessage(message);
     }

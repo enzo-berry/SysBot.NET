@@ -92,17 +92,13 @@ public class ShopifyBot<T> where T : PKM, new()
             return;
         }
 
-        // Validate trade.
-        if (!await MarkedAsFulfilled(orderID))
-        {
-            LogUtil.LogInfo($"Failed to mark order as fulfilled for orderID {orderID}.", nameof(ShopifyBot<T>));
-            socket.Close();
-            return;
-        }
+        // When trade "TOTALLY" finished we can mark it as fulfilled.
+        // For now its in the callback of the trade.
 
         LogUtil.LogInfo($"Trade finished orderID: {orderID}.", nameof(ShopifyBot<T>));
         socket.Close();
     }
+
     private void HandleSocketClose(IWebSocketConnection socket)
     {
         var orderID = GetOrderIDFromWS(socket);
@@ -113,6 +109,7 @@ public class ShopifyBot<T> where T : PKM, new()
         Info.ClearTrade(orderID);
         LogUtil.LogInfo($"Websocket closed for orderID: {orderID}.", nameof(ShopifyBot<T>));
     }
+
     async private Task<bool> CheckShopifyOrder(ulong orderID)
     {
         try
@@ -135,7 +132,7 @@ public class ShopifyBot<T> where T : PKM, new()
         }
     }
 
-    async private Task<bool> MarkedAsFulfilled(ulong orderID)
+    async public Task<bool> MarkedAsFulfilled(ulong orderID)
     {
         try
         {
@@ -224,7 +221,7 @@ public class ShopifyBot<T> where T : PKM, new()
 
         // Here we assume trainer name is the orderID. as well as the trainerID.
         var trainer = new PokeTradeTrainerInfo(orderID.ToString(), orderID);
-        var notifier = new ShopifyTradeNotifier<T>(pk, code, orderID.ToString(), socket, Hub.Config.Shopify);
+        var notifier = new ShopifyTradeNotifier<T>(pk, code, orderID, socket, Hub.Config.Shopify, this);
         var tt = type == PokeRoutineType.SeedCheck ? PokeTradeType.Seed : PokeTradeType.Specific;
         var detail = new PokeTradeDetail<T>(pk, trainer, notifier, tt, code, requestRequestSignificance == RequestSignificance.Favored);
         var trade = new TradeEntry<T>(detail, orderID, type, orderID.ToString());
