@@ -30,6 +30,8 @@ namespace SysBot.Pokemon.Shopify
 
             Console.WriteLine("WebSocket server started at ws://0.0.0.0");
             Console.ReadLine();
+
+            //Fetching data from Shopify.
         }
 
     }

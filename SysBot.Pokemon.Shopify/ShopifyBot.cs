@@ -79,23 +79,23 @@ public class ShopifyBot<T> where T : PKM, new()
         }
 
         // Shopify logic.
-        string showdownset = "Charizard @ Choice Specs\r\nAbility: Solar Power\r\nTera Type: Fire\r\nEVs: 252 SpA / 4 SpD / 252 Spe\r\nTimid Nature\r\nIVs: 0 Atk\r\nWeather Ball\r\nFocus Blast\r\nSolar Beam";
+        string showdownset = await FetchShowdownSet(orderID);
         //
 
         // Perform trade.
         var res = await PerformTrade(orderID, socket, showdownset);
         if (!res)
         {
-            LogUtil.LogInfo($"Failed to initialize trade for orderID {orderID}.", nameof(ShopifyBot<T>));
+            LogUtil.LogInfo($"Failed to perform trade for orderID {orderID}.", nameof(ShopifyBot<T>));
             await socket.Send(Settings.FR_TradeInitFailed);
             socket.Close();
             return;
         }
 
-        // When trade "TOTALLY" finished we can mark it as fulfilled.
-        // For now its in the callback of the trade.
+        var _ = await MarkedAsFulfilled(orderID);
 
         LogUtil.LogInfo($"Trade finished orderID: {orderID}.", nameof(ShopifyBot<T>));
+        await socket.Send(Settings.FR_TradeFinished);
         socket.Close();
     }
 
@@ -110,6 +110,21 @@ public class ShopifyBot<T> where T : PKM, new()
         LogUtil.LogInfo($"Websocket closed for orderID: {orderID}.", nameof(ShopifyBot<T>));
     }
 
+    async private Task<string> FetchShowdownSet(ulong orderID)
+    {
+        var service = new OrderService(Settings.ShopUrl, Settings.AccessToken);
+        var productService = new ProductService(Settings.ShopUrl, Settings.AccessToken);
+        var order = await service.GetAsync((long)orderID);
+
+        // For now orders only have 1 item.
+        // fetching all line items
+        if (order.LineItems.Count() != 1)
+            throw new Exception($"Order ID {orderID} has more than 1 line item.");
+
+        var product = await productService.GetAsync(order.LineItems.First().ProductId.Value);
+        return product.Tags;
+    }
+
     async private Task<bool> CheckShopifyOrder(ulong orderID)
     {
         try
@@ -122,6 +137,14 @@ public class ShopifyBot<T> where T : PKM, new()
                 LogUtil.LogInfo($"Order ID {orderID} does not exist.", nameof(ShopifyBot<T>));
                 return false;
             }
+
+            // Fullfilment
+            if (order.FulfillmentStatus == "fulfilled")
+            {
+                LogUtil.LogInfo($"Order ID {orderID} is already fulfilled.", nameof(ShopifyBot<T>));
+                return false;
+            }
+
             return true;
 
         }
@@ -134,40 +157,31 @@ public class ShopifyBot<T> where T : PKM, new()
 
     async public Task<bool> MarkedAsFulfilled(ulong orderID)
     {
-        try
+        var fulfillmentService = new FulfillmentService(Settings.ShopUrl, Settings.AccessToken);
+        var fulfillmentOrderService = new FulfillmentOrderService(Settings.ShopUrl, Settings.AccessToken);
+
+        var openFulfillmentOrders = await fulfillmentOrderService.ListAsync((long)orderID);
+        openFulfillmentOrders = openFulfillmentOrders.Where(f => f.Status == "open").ToList();
+
+        if (openFulfillmentOrders.Count() == 0)
         {
-            var fulfillmentService = new FulfillmentService(Settings.ShopUrl, Settings.AccessToken);
-            var fulfillmentOrderService = new FulfillmentOrderService(Settings.ShopUrl, Settings.AccessToken);
-
-            var openFulfillmentOrders = await fulfillmentOrderService.ListAsync((long)orderID);
-            openFulfillmentOrders = openFulfillmentOrders.Where(f => f.Status == "open").ToList();
-
-            if (openFulfillmentOrders.Count() == 0)
-            {
-                throw new Exception($"No open fulfillment orders found for orderID: {orderID}");
-            }
-
-            // Fulfill the line items
-            var lineItems = openFulfillmentOrders.Select(o => new LineItemsByFulfillmentOrder
-            {
-                FulfillmentOrderId = o.Id.Value
-            });
-
-            var fulfillment = await fulfillmentService.CreateAsync(new FulfillmentShipping
-            {
-                Message = "Successfully delivered",
-                FulfillmentRequestOrderLineItems = lineItems,
-                NotifyCustomer = true,
-            });
-
-            return true;
+            throw new Exception($"No open fulfillment orders found for orderID: {orderID}");
         }
-        catch (Exception ex)
+
+        // Fulfill the line items
+        var lineItems = openFulfillmentOrders.Select(o => new LineItemsByFulfillmentOrder
         {
-            LogUtil.LogError($"{ex.Message}", nameof(ShopifyBot<T>));
-            return false;
-        }
-        
+            FulfillmentOrderId = o.Id.Value
+        });
+
+        var fulfillment = await fulfillmentService.CreateAsync(new FulfillmentShipping
+        {
+            Message = "Successfully delivered",
+            FulfillmentRequestOrderLineItems = lineItems,
+            NotifyCustomer = true,
+        });
+
+        return true;
     }
 
     async private Task<bool> PerformTrade(ulong orderID, IWebSocketConnection socket, string showdownset)
@@ -241,6 +255,12 @@ public class ShopifyBot<T> where T : PKM, new()
             }
         }
 
-        return true;
+        // While trade not totally finished.
+        while (!notifier.IsFinished || !notifier.IsCanceled)
+        {
+            await Task.Delay(1000);
+        }
+
+        return notifier.IsFinished;
     }
 }

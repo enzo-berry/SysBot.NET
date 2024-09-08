@@ -1,5 +1,6 @@
 using Fleck;
 using PKHeX.Core;
+using ShopifySharp.GraphQL;
 using SysBot.Base;
 using System;
 using System.Linq;
@@ -14,6 +15,8 @@ public class ShopifyTradeNotifier<T> : IPokeTradeNotifier<T> where T : PKM, new(
     private ulong OrderID { get; }
     private IWebSocketConnection Client { get; }
     public bool IsFinished { get; set; } = false;
+    public bool IsCanceled { get; set; } = false;
+
     private ShopifyBot<T> Bot { get; } // Reference to ShopifyBot
     private ShopifySettings Settings { get; }
 
@@ -42,6 +45,9 @@ public class ShopifyTradeNotifier<T> : IPokeTradeNotifier<T> where T : PKM, new(
     {
         OnFinish?.Invoke(routine);
         var line = string.Format(Settings.FR_TradeCanceled, msg);
+
+        IsCanceled = true;
+
         LogUtil.LogText(line);
         SendMessage(line);
     }
