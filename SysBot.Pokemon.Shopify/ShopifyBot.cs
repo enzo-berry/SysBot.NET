@@ -87,7 +87,6 @@ public class ShopifyBot<T> where T : PKM, new()
         if (!res)
         {
             LogUtil.LogInfo($"Failed to perform trade for orderID {orderID}.", nameof(ShopifyBot<T>));
-            await socket.Send(Settings.FR_TradeInitFailed);
             socket.Close();
             return;
         }
@@ -95,7 +94,7 @@ public class ShopifyBot<T> where T : PKM, new()
         var _ = await MarkedAsFulfilled(orderID);
 
         LogUtil.LogInfo($"Trade finished orderID: {orderID}.", nameof(ShopifyBot<T>));
-        await socket.Send(Settings.FR_TradeFinished);
+        await socket.Send(Settings.FR_TradeFinished); // sening after closed crashes.
         socket.Close();
     }
 
@@ -256,7 +255,7 @@ public class ShopifyBot<T> where T : PKM, new()
         }
 
         // While trade not totally finished.
-        while (!notifier.IsFinished || !notifier.IsCanceled)
+        while (!notifier.IsFinished && !notifier.IsCanceled)
         {
             await Task.Delay(1000);
         }
